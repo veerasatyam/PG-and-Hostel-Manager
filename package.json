@@ -1,0 +1,15 @@
+{
+  "name": "pg-hostel-management",
+  "version": "1.0.0",
+  "description": "Full-stack PG & Hostel Management Application with Bed Allocation, Pro-rated Rent & Complaints",
+  "scripts": {
+    "server:dev": "npm --prefix server run dev",
+    "client:dev": "npm --prefix client run dev",
+    "seed": "npm --prefix server run seed",
+    "test": "npm --prefix server run test",
+    "build": "npm --prefix server run build && npm --prefix client run build"
+  },
+  "keywords": ["pg-management", "hostel-management", "rent-tracking"],
+  "author": "StayHaven Team",
+  "license": "MIT"
+}

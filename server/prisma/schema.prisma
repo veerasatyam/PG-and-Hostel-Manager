@@ -1,0 +1,197 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  TENANT
+}
+
+enum RoomType {
+  SINGLE
+  DOUBLE
+  TRIPLE
+  FOUR_SHARING
+}
+
+enum BedStatus {
+  AVAILABLE
+  OCCUPIED
+  MAINTENANCE
+}
+
+enum OccupancyStatus {
+  ACTIVE
+  CHECKED_OUT
+}
+
+enum DepositStatus {
+  HELD
+  REFUNDED
+  PARTIALLY_REFUNDED
+  FORFEITED
+}
+
+enum RentStatus {
+  DUE
+  PAID
+  OVERDUE
+}
+
+enum PaymentMethod {
+  UPI
+  CASH
+  BANK_TRANSFER
+  CARD
+}
+
+enum ComplaintCategory {
+  PLUMBING
+  ELECTRICAL
+  CLEANING
+  WIFI
+  FURNITURE
+  OTHER
+}
+
+enum ComplaintPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum ComplaintStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CANCELLED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  phone     String?
+  role      Role     @default(TENANT)
+  tenant    Tenant?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Room {
+  id        String   @id @default(cuid())
+  number    String   @unique
+  floor     Int      @default(1)
+  type      RoomType @default(DOUBLE)
+  hasAc     Boolean  @default(false)
+  baseRent  Float
+  beds      Bed[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Bed {
+  id          String         @id @default(cuid())
+  name        String
+  roomId      String
+  room        Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  status      BedStatus      @default(AVAILABLE)
+  occupancies BedOccupancy[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@unique([roomId, name])
+}
+
+model Tenant {
+  id               String          @id @default(cuid())
+  userId           String          @unique
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emergencyContact String?
+  idProofNumber    String?
+  occupancies      BedOccupancy[]
+  rentRecords      RentRecord[]
+  complaints       Complaint[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+}
+
+model BedOccupancy {
+  id                   String          @id @default(cuid())
+  bedId                String
+  bed                  Bed             @relation(fields: [bedId], references: [id], onDelete: Cascade)
+  tenantId             String
+  tenant               Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  checkInDate          DateTime
+  checkOutDate         DateTime?
+  status               OccupancyStatus @default(ACTIVE)
+  monthlyRent          Float
+  securityDeposit      Float           @default(0)
+  depositStatus        DepositStatus   @default(HELD)
+  depositRefundAmount  Float?
+  depositDeductions    Float?          @default(0)
+  depositDeductionNotes String?
+  rentRecords          RentRecord[]
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+}
+
+model RentRecord {
+  id                      String        @id @default(cuid())
+  tenantId                String
+  tenant                  Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  occupancyId             String?
+  occupancy               BedOccupancy? @relation(fields: [occupancyId], references: [id], onDelete: SetNull)
+  month                   Int
+  year                    Int
+  dueDate                 DateTime
+  baseAmount              Float
+  amount                  Float
+  isProRated              Boolean       @default(false)
+  proRatedDays            Int?
+  totalDaysInMonth        Int?
+  proRatedCalculationNotes String?
+  paidAmount              Float         @default(0)
+  balance                 Float
+  status                  RentStatus    @default(DUE)
+  payments                Payment[]
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+
+  @@unique([tenantId, month, year])
+}
+
+model Payment {
+  id             String        @id @default(cuid())
+  rentRecordId   String
+  rentRecord     RentRecord    @relation(fields: [rentRecordId], references: [id], onDelete: Cascade)
+  amount         Float
+  paymentDate    DateTime      @default(now())
+  paymentMethod  PaymentMethod @default(UPI)
+  transactionRef String?
+  receiptNumber  String        @unique
+  notes          String?
+  createdAt      DateTime      @default(now())
+}
+
+model Complaint {
+  id              String            @id @default(cuid())
+  tenantId        String
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  title           String
+  description     String
+  category        ComplaintCategory @default(OTHER)
+  priority        ComplaintPriority @default(MEDIUM)
+  status          ComplaintStatus   @default(OPEN)
+  resolutionNotes String?
+  resolvedAt      DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+}
