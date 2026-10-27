@@ -1,11 +1,15 @@
 import { Router, Request, Response } from 'express';
-import prisma from '../db';
+import { Room } from '../models/Room';
+import { BedOccupancy } from '../models/BedOccupancy';
+import { RentRecord } from '../models/RentRecord';
+import { Payment } from '../models/Payment';
+import { Complaint } from '../models/Complaint';
 import { authenticate, requireOwner } from '../middleware/auth';
 import { startOfMonth, endOfMonth, differenceInDays } from 'date-fns';
 
 const router = Router();
 
-// GET /api/dashboard - PG / Hostel Overview Dashboard Stats
+// GET /api/dashboard - Operations Overview Metrics
 router.get('/', authenticate, requireOwner, async (_req: Request, res: Response) => {
   try {
     const now = new Date();
@@ -14,79 +18,84 @@ router.get('/', authenticate, requireOwner, async (_req: Request, res: Response)
     const monthStart = startOfMonth(now);
     const monthEnd = endOfMonth(now);
 
-    // 1. Bed & Occupancy metrics
-    const totalRooms = await prisma.room.count();
-    const totalBeds = await prisma.bed.count();
-    const occupiedBeds = await prisma.bedOccupancy.count({
-      where: { status: 'ACTIVE' },
+    // 1. Bed & Occupancy
+    const rooms = await Room.find().lean();
+    let totalBeds = 0;
+    rooms.forEach((r: any) => {
+      totalBeds += (r.beds || []).length;
     });
+
+    const occupiedBeds = await BedOccupancy.countDocuments({ status: 'ACTIVE' });
     const availableBeds = Math.max(0, totalBeds - occupiedBeds);
     const occupancyRate = totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0;
 
-    // 2. Rent collected this month (sum of payments in this month)
-    const monthPayments = await prisma.payment.findMany({
-      where: {
-        paymentDate: {
-          gte: monthStart,
-          lte: monthEnd,
-        },
-      },
-    });
-    const rentCollectedThisMonth = monthPayments.reduce((sum, p) => sum + p.amount, 0);
+    // 2. Collections & Billing
+    const monthPayments = await Payment.find({
+      paymentDate: { $gte: monthStart, $lte: monthEnd },
+    }).lean();
+    const rentCollectedThisMonth = monthPayments.reduce((sum: number, p: any) => sum + p.amount, 0);
 
-    // Rent billed for current month
-    const currentMonthRecords = await prisma.rentRecord.findMany({
-      where: {
-        month: currentMonth,
-        year: currentYear,
-      },
-    });
-    const totalBilledThisMonth = currentMonthRecords.reduce((sum, r) => sum + r.amount, 0);
+    const currentMonthRecords = await RentRecord.find({
+      month: currentMonth,
+      year: currentYear,
+    }).lean();
+    const totalBilledThisMonth = currentMonthRecords.reduce((sum: number, r: any) => sum + r.amount, 0);
 
-    // 3. Overdue tenants & overdue amount
-    // Update any DUE records that passed due date
-    await prisma.rentRecord.updateMany({
-      where: {
+    // 3. Update overdue records & fetch
+    await RentRecord.updateMany(
+      {
         status: 'DUE',
-        balance: { gt: 0 },
-        dueDate: { lt: now },
+        balance: { $gt: 0 },
+        dueDate: { $lt: now },
       },
-      data: {
-        status: 'OVERDUE',
-      },
-    });
+      {
+        $set: { status: 'OVERDUE' },
+      }
+    );
 
-    const overdueRecords = await prisma.rentRecord.findMany({
-      where: {
-        status: 'OVERDUE',
-        balance: { gt: 0 },
-      },
-      include: {
-        tenant: {
-          include: {
-            user: { select: { name: true, email: true, phone: true } },
-            occupancies: {
-              where: { status: 'ACTIVE' },
-              include: { bed: { include: { room: true } } },
-            },
-          },
-        },
-      },
-      orderBy: { dueDate: 'asc' },
-    });
+    const overdueRecords = await RentRecord.find({
+      status: 'OVERDUE',
+      balance: { $gt: 0 },
+    })
+      .populate({
+        path: 'tenantId',
+        populate: { path: 'userId', select: 'name email phone' },
+      })
+      .sort({ dueDate: 1 })
+      .lean();
 
-    const totalOverdueAmount = overdueRecords.reduce((sum, r) => sum + r.balance, 0);
+    const totalOverdueAmount = overdueRecords.reduce((sum: number, r: any) => sum + r.balance, 0);
+
+    // Fetch active stay room numbers for overdue tenants
+    const overdueTenantIds = overdueRecords.map((r: any) => r.tenantId?._id).filter(Boolean);
+    const activeOccs = await BedOccupancy.find({
+      tenantId: { $in: overdueTenantIds },
+      status: 'ACTIVE',
+    })
+      .populate('roomId', 'number beds')
+      .lean();
+
+    const stayMap = new Map<string, any>();
+    activeOccs.forEach((occ: any) => {
+      const room = occ.roomId as any;
+      const bed = room?.beds?.find((b: any) => b._id.toString() === occ.bedId.toString());
+      stayMap.set(occ.tenantId.toString(), {
+        roomNumber: room?.number || 'N/A',
+        bedName: bed?.name || 'Bed',
+      });
+    });
 
     const overdueTenantsMap = new Map<string, any>();
-    overdueRecords.forEach((record) => {
-      const activeStay = record.tenant.occupancies[0];
-      const existing = overdueTenantsMap.get(record.tenantId);
+    overdueRecords.forEach((record: any) => {
+      const tenantIdStr = record.tenantId?._id?.toString() || 'unknown';
+      const stay = stayMap.get(tenantIdStr) || { roomNumber: 'N/A', bedName: 'N/A' };
       const daysOverdue = Math.max(0, differenceInDays(now, new Date(record.dueDate)));
 
-      if (existing) {
-        existing.totalOverdueBalance += record.balance;
-        existing.records.push({
-          id: record.id,
+      if (overdueTenantsMap.has(tenantIdStr)) {
+        const item = overdueTenantsMap.get(tenantIdStr);
+        item.totalOverdueBalance += record.balance;
+        item.records.push({
+          id: record._id.toString(),
           month: record.month,
           year: record.year,
           dueDate: record.dueDate,
@@ -94,18 +103,18 @@ router.get('/', authenticate, requireOwner, async (_req: Request, res: Response)
           daysOverdue,
         });
       } else {
-        overdueTenantsMap.set(record.tenantId, {
-          tenantId: record.tenantId,
-          name: record.tenant.user.name,
-          email: record.tenant.user.email,
-          phone: record.tenant.user.phone,
-          roomNumber: activeStay?.bed.room.number || 'N/A',
-          bedName: activeStay?.bed.name || 'N/A',
+        overdueTenantsMap.set(tenantIdStr, {
+          tenantId: tenantIdStr,
+          name: record.tenantId?.userId?.name || 'Resident',
+          email: record.tenantId?.userId?.email || '',
+          phone: record.tenantId?.userId?.phone || '',
+          roomNumber: stay.roomNumber,
+          bedName: stay.bedName,
           totalOverdueBalance: record.balance,
           maxDaysOverdue: daysOverdue,
           records: [
             {
-              id: record.id,
+              id: record._id.toString(),
               month: record.month,
               year: record.year,
               dueDate: record.dueDate,
@@ -120,27 +129,27 @@ router.get('/', authenticate, requireOwner, async (_req: Request, res: Response)
     const overdueTenants = Array.from(overdueTenantsMap.values());
 
     // 4. Complaints breakdown
-    const openComplaints = await prisma.complaint.count({ where: { status: 'OPEN' } });
-    const inProgressComplaints = await prisma.complaint.count({ where: { status: 'IN_PROGRESS' } });
-    const resolvedComplaints = await prisma.complaint.count({ where: { status: 'RESOLVED' } });
+    const openComplaints = await Complaint.countDocuments({ status: 'OPEN' });
+    const inProgressComplaints = await Complaint.countDocuments({ status: 'IN_PROGRESS' });
+    const resolvedComplaints = await Complaint.countDocuments({ status: 'RESOLVED' });
 
     // 5. Recent 5 payments
-    const recentPayments = await prisma.payment.findMany({
-      take: 5,
-      orderBy: { paymentDate: 'desc' },
-      include: {
-        rentRecord: {
-          include: {
-            tenant: { include: { user: { select: { name: true } } } },
-          },
+    const recentPayments = await Payment.find()
+      .populate({
+        path: 'rentRecordId',
+        populate: {
+          path: 'tenantId',
+          populate: { path: 'userId', select: 'name' },
         },
-      },
-    });
+      })
+      .sort({ paymentDate: -1 })
+      .limit(5)
+      .lean();
 
     return res.json({
       metrics: {
         occupancy: {
-          totalRooms,
+          totalRooms: rooms.length,
           totalBeds,
           occupiedBeds,
           availableBeds,
@@ -162,13 +171,13 @@ router.get('/', authenticate, requireOwner, async (_req: Request, res: Response)
         },
       },
       overdueTenants,
-      recentPayments: recentPayments.map((p) => ({
-        id: p.id,
+      recentPayments: recentPayments.map((p: any) => ({
+        id: p._id.toString(),
         receiptNumber: p.receiptNumber,
         amount: p.amount,
         paymentDate: p.paymentDate,
         paymentMethod: p.paymentMethod,
-        tenantName: p.rentRecord.tenant.user.name,
+        tenantName: (p.rentRecordId as any)?.tenantId?.userId?.name || 'Resident',
       })),
     });
   } catch (err: any) {

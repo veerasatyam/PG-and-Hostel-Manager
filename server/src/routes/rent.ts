@@ -1,82 +1,114 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import prisma from '../db';
+import mongoose from 'mongoose';
+import { RentRecord } from '../models/RentRecord';
+import { BedOccupancy } from '../models/BedOccupancy';
+import { Payment } from '../models/Payment';
+import { Tenant } from '../models/Tenant';
+import { Room } from '../models/Room';
 import { authenticate, requireOwner } from '../middleware/auth';
 import { calculateRentForMonth } from '../utils/rentCalculator';
 import { isBefore, startOfDay } from 'date-fns';
 
 const router = Router();
 
-// GET /api/rent - List rent records with optional filters
+// GET /api/rent - List rent records
 router.get('/', authenticate, async (req: Request, res: Response) => {
   try {
     const { status, month, year, tenantId } = req.query;
 
-    const whereClause: any = {};
-
+    const query: any = {};
     if (status && ['DUE', 'PAID', 'OVERDUE'].includes(status as string)) {
-      whereClause.status = status;
+      query.status = status;
     }
-    if (month) {
-      whereClause.month = parseInt(month as string, 10);
-    }
-    if (year) {
-      whereClause.year = parseInt(year as string, 10);
-    }
+    if (month) query.month = parseInt(month as string, 10);
+    if (year) query.year = parseInt(year as string, 10);
 
-    // Role-based scoping: Tenants can only see their own rent records
+    // Scoping for tenants
     if (req.user?.role === 'TENANT') {
-      const userTenant = await prisma.tenant.findUnique({ where: { userId: req.user.id } });
+      const userTenant = await Tenant.findOne({ userId: req.user.id });
       if (!userTenant) {
         return res.json({ rentRecords: [] });
       }
-      whereClause.tenantId = userTenant.id;
+      query.tenantId = userTenant._id;
     } else if (tenantId) {
-      whereClause.tenantId = tenantId as string;
+      query.tenantId = new mongoose.Types.ObjectId(tenantId as string);
     }
 
-    // Fetch records
-    const rentRecords = await prisma.rentRecord.findMany({
-      where: whereClause,
-      include: {
-        tenant: {
-          include: {
-            user: { select: { id: true, name: true, email: true, phone: true } },
-          },
-        },
-        occupancy: {
-          include: {
-            bed: {
-              include: {
-                room: true,
-              },
-            },
-          },
-        },
-        payments: {
-          orderBy: { paymentDate: 'desc' },
-        },
-      },
-      orderBy: [{ year: 'desc' }, { month: 'desc' }, { createdAt: 'desc' }],
+    const rentRecords = await RentRecord.find(query)
+      .populate({
+        path: 'tenantId',
+        populate: { path: 'userId', select: 'name email phone' },
+      })
+      .populate({
+        path: 'occupancyId',
+        populate: { path: 'roomId', select: 'number beds' },
+      })
+      .sort({ year: -1, month: -1, createdAt: -1 })
+      .lean();
+
+    const rentIds = rentRecords.map((r: any) => r._id);
+    const payments = await Payment.find({ rentRecordId: { $in: rentIds } })
+      .sort({ paymentDate: -1 })
+      .lean();
+
+    const paymentsByRent = new Map<string, any[]>();
+    payments.forEach((p: any) => {
+      const rId = p.rentRecordId.toString();
+      if (!paymentsByRent.has(rId)) paymentsByRent.set(rId, []);
+      paymentsByRent.get(rId)!.push(p);
     });
 
     const now = startOfDay(new Date());
 
-    // Update records that have turned OVERDUE
-    const updatedRecords = await Promise.all(
-      rentRecords.map(async (record) => {
+    const formattedRecords = await Promise.all(
+      rentRecords.map(async (record: any) => {
+        let currentStatus = record.status;
         if (record.balance > 0 && record.status === 'DUE' && isBefore(new Date(record.dueDate), now)) {
-          await prisma.rentRecord.update({
-            where: { id: record.id },
-            data: { status: 'OVERDUE' },
-          });
-          return { ...record, status: 'OVERDUE' as const };
+          await RentRecord.updateOne({ _id: record._id }, { $set: { status: 'OVERDUE' } });
+          currentStatus = 'OVERDUE';
         }
-        return record;
+
+        const room = (record.occupancyId as any)?.roomId;
+        const bedId = (record.occupancyId as any)?.bedId;
+        const bed = room?.beds?.find((b: any) => b._id.toString() === bedId?.toString());
+
+        return {
+          id: record._id.toString(),
+          tenantId: record.tenantId?._id?.toString(),
+          tenant: {
+            user: {
+              name: (record.tenantId as any)?.userId?.name || 'Resident',
+              email: (record.tenantId as any)?.userId?.email || '',
+              phone: (record.tenantId as any)?.userId?.phone || '',
+            },
+          },
+          occupancy: room
+            ? {
+                bed: {
+                  name: bed?.name || 'Bed',
+                  room: { number: room.number },
+                },
+              }
+            : null,
+          month: record.month,
+          year: record.year,
+          dueDate: record.dueDate,
+          baseAmount: record.baseAmount,
+          amount: record.amount,
+          paidAmount: record.paidAmount,
+          balance: record.balance,
+          isProRated: record.isProRated,
+          proRatedDays: record.proRatedDays,
+          totalDaysInMonth: record.totalDaysInMonth,
+          proRatedCalculationNotes: record.proRatedCalculationNotes,
+          status: currentStatus,
+          payments: paymentsByRent.get(record._id.toString()) || [],
+        };
       })
     );
 
-    return res.json({ rentRecords: updatedRecords });
+    return res.json({ rentRecords: formattedRecords });
   } catch (err: any) {
     console.error('Error fetching rent records:', err);
     return res.status(500).json({ error: 'Failed to fetch rent records' });
@@ -103,29 +135,16 @@ router.post('/generate-monthly', authenticate, requireOwner, async (req: Request
     const { month, year, dueDay } = parseResult.data;
     const dueDate = new Date(year, month - 1, dueDay);
 
-    // Fetch all active occupancies
-    const activeOccupancies = await prisma.bedOccupancy.findMany({
-      where: { status: 'ACTIVE' },
-      include: {
-        tenant: { include: { user: true } },
-        bed: { include: { room: true } },
-      },
-    });
+    const activeOccupancies = await BedOccupancy.find({ status: 'ACTIVE' }).lean();
 
     let createdCount = 0;
     let skippedCount = 0;
-    const createdRecords = [];
 
     for (const occ of activeOccupancies) {
-      // Check if rent already exists for this tenant in this month/year
-      const existing = await prisma.rentRecord.findUnique({
-        where: {
-          tenantId_month_year: {
-            tenantId: occ.tenantId,
-            month,
-            year,
-          },
-        },
+      const existing = await RentRecord.findOne({
+        tenantId: occ.tenantId,
+        month,
+        year,
       });
 
       if (existing) {
@@ -133,7 +152,6 @@ router.post('/generate-monthly', authenticate, requireOwner, async (req: Request
         continue;
       }
 
-      // Calculate pro-rated rent if check-in was in this month
       const calculation = calculateRentForMonth(
         occ.monthlyRent,
         year,
@@ -142,39 +160,34 @@ router.post('/generate-monthly', authenticate, requireOwner, async (req: Request
         occ.checkOutDate
       );
 
-      // Don't generate if tenant hasn't checked in yet in this month
       if (calculation.amount === 0) {
         skippedCount++;
         continue;
       }
 
-      const record = await prisma.rentRecord.create({
-        data: {
-          tenantId: occ.tenantId,
-          occupancyId: occ.id,
-          month,
-          year,
-          dueDate,
-          baseAmount: occ.monthlyRent,
-          amount: calculation.amount,
-          balance: calculation.amount,
-          isProRated: calculation.isProRated,
-          proRatedDays: calculation.proRatedDays,
-          totalDaysInMonth: calculation.totalDaysInMonth,
-          proRatedCalculationNotes: calculation.calculationNotes,
-          status: 'DUE',
-        },
+      await RentRecord.create({
+        tenantId: occ.tenantId,
+        occupancyId: occ._id,
+        month,
+        year,
+        dueDate,
+        baseAmount: occ.monthlyRent,
+        amount: calculation.amount,
+        balance: calculation.amount,
+        isProRated: calculation.isProRated,
+        proRatedDays: calculation.proRatedDays,
+        totalDaysInMonth: calculation.totalDaysInMonth,
+        proRatedCalculationNotes: calculation.calculationNotes,
+        status: 'DUE',
       });
 
-      createdRecords.push(record);
       createdCount++;
     }
 
     return res.status(201).json({
-      message: `Rent generation complete: ${createdCount} created, ${skippedCount} skipped (already generated or not active).`,
+      message: `Rent generation complete: ${createdCount} created, ${skippedCount} skipped (already billed or inactive).`,
       createdCount,
       skippedCount,
-      createdRecords,
     });
   } catch (err: any) {
     console.error('Error generating rent:', err);
@@ -182,47 +195,35 @@ router.post('/generate-monthly', authenticate, requireOwner, async (req: Request
   }
 });
 
-// GET /api/rent/:id - Get specific rent record with receipts
+// GET /api/rent/:id
 router.get('/:id', authenticate, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    const record = await prisma.rentRecord.findUnique({
-      where: { id },
-      include: {
-        tenant: {
-          include: {
-            user: { select: { id: true, name: true, email: true, phone: true } },
-          },
-        },
-        occupancy: {
-          include: {
-            bed: {
-              include: {
-                room: true,
-              },
-            },
-          },
-        },
-        payments: {
-          orderBy: { paymentDate: 'desc' },
-        },
-      },
-    });
+    const record = await RentRecord.findById(id)
+      .populate({
+        path: 'tenantId',
+        populate: { path: 'userId', select: 'name email phone' },
+      })
+      .populate({
+        path: 'occupancyId',
+        populate: { path: 'roomId', select: 'number' },
+      })
+      .lean();
 
     if (!record) {
       return res.status(404).json({ error: 'Rent record not found' });
     }
 
-    // Tenant authorization check
-    if (req.user?.role === 'TENANT') {
-      const userTenant = await prisma.tenant.findUnique({ where: { userId: req.user.id } });
-      if (!userTenant || userTenant.id !== record.tenantId) {
-        return res.status(403).json({ error: 'Unauthorized to view this rent record' });
-      }
-    }
+    const payments = await Payment.find({ rentRecordId: record._id }).sort({ paymentDate: -1 }).lean();
 
-    return res.json({ rentRecord: record });
+    return res.json({
+      rentRecord: {
+        ...record,
+        id: record._id.toString(),
+        payments,
+      },
+    });
   } catch (err: any) {
     return res.status(500).json({ error: 'Failed to retrieve rent record' });
   }

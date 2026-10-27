@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { connectDB } from './db';
 import authRouter from './routes/auth';
 import roomsRouter from './routes/rooms';
 import tenantsRouter from './routes/tenants';
@@ -25,16 +26,17 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
   next();
 });
 
-// Health check endpoint
+// Health check
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({
     status: 'ok',
+    database: 'MongoDB',
     timestamp: new Date().toISOString(),
-    service: 'StayHaven PG & Hostel API',
+    service: 'StayHaven Property Management API',
   });
 });
 
-// Register routers
+// Routes
 app.use('/api/auth', authRouter);
 app.use('/api/rooms', roomsRouter);
 app.use('/api/tenants', tenantsRouter);
@@ -43,21 +45,28 @@ app.use('/api/payments', paymentsRouter);
 app.use('/api/complaints', complaintsRouter);
 app.use('/api/dashboard', dashboardRouter);
 
-// Global 404 handler
+// 404 handler
 app.use((_req: Request, res: Response) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
 
 // Global error handler
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-  console.error('Unhandled error:', err);
+  console.error('Unhandled server error:', err);
   res.status(500).json({ error: 'Internal server error', message: err?.message || 'Unknown error' });
 });
 
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => {
-    console.log(`🚀 StayHaven Server running on http://localhost:${PORT}`);
-  });
+  connectDB()
+    .then(() => {
+      app.listen(PORT, () => {
+        console.log(`⚡ StayHaven API Server running on http://localhost:${PORT}`);
+      });
+    })
+    .catch((err) => {
+      console.error('Fatal: Failed to connect to MongoDB', err);
+      process.exit(1);
+    });
 }
 
 export default app;

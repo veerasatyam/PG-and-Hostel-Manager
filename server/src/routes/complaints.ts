@@ -1,6 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import prisma from '../db';
+import { Complaint } from '../models/Complaint';
+import { Tenant } from '../models/Tenant';
+import { BedOccupancy } from '../models/BedOccupancy';
+import { Room } from '../models/Room';
 import { authenticate, requireOwner } from '../middleware/auth';
 
 const router = Router();
@@ -22,43 +25,47 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
   try {
     const { status, category } = req.query;
 
-    const whereClause: any = {};
-    if (status) {
-      whereClause.status = status as string;
-    }
-    if (category) {
-      whereClause.category = category as string;
-    }
+    const query: any = {};
+    if (status) query.status = status as string;
+    if (category) query.category = category as string;
 
-    // Role-based scope
     if (req.user?.role === 'TENANT') {
-      const tenant = await prisma.tenant.findUnique({ where: { userId: req.user.id } });
-      if (!tenant) {
-        return res.json({ complaints: [] });
-      }
-      whereClause.tenantId = tenant.id;
+      const tenant = await Tenant.findOne({ userId: req.user.id });
+      if (!tenant) return res.json({ complaints: [] });
+      query.tenantId = tenant._id;
     }
 
-    const complaints = await prisma.complaint.findMany({
-      where: whereClause,
-      include: {
-        tenant: {
-          include: {
-            user: { select: { id: true, name: true, email: true, phone: true } },
-            occupancies: {
-              where: { status: 'ACTIVE' },
-              include: { bed: { include: { room: true } } },
-            },
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
+    const complaints = await Complaint.find(query)
+      .populate({
+        path: 'tenantId',
+        populate: { path: 'userId', select: 'name email phone' },
+      })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Map tenant occupancies to get room numbers
+    const tenantIds = complaints.map((c: any) => c.tenantId?._id).filter(Boolean);
+    const activeOccs = await BedOccupancy.find({
+      tenantId: { $in: tenantIds },
+      status: 'ACTIVE',
+    })
+      .populate('roomId', 'number beds')
+      .lean();
+
+    const stayMap = new Map<string, any>();
+    activeOccs.forEach((occ: any) => {
+      const room = occ.roomId as any;
+      const bed = room?.beds?.find((b: any) => b._id.toString() === occ.bedId.toString());
+      stayMap.set(occ.tenantId.toString(), {
+        roomNumber: room?.number || 'N/A',
+        bedName: bed?.name || 'Bed',
+      });
     });
 
-    const formatted = complaints.map((c) => {
-      const activeStay = c.tenant.occupancies[0];
+    const formatted = complaints.map((c: any) => {
+      const stay = stayMap.get(c.tenantId?._id?.toString()) || { roomNumber: 'N/A', bedName: 'N/A' };
       return {
-        id: c.id,
+        id: c._id.toString(),
         title: c.title,
         description: c.description,
         category: c.category,
@@ -69,12 +76,12 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
         createdAt: c.createdAt,
         updatedAt: c.updatedAt,
         tenant: {
-          id: c.tenant.id,
-          name: c.tenant.user.name,
-          email: c.tenant.user.email,
-          phone: c.tenant.user.phone,
-          roomNumber: activeStay?.bed.room.number || 'N/A',
-          bedName: activeStay?.bed.name || 'N/A',
+          id: c.tenantId?._id?.toString(),
+          name: c.tenantId?.userId?.name || 'Resident',
+          email: c.tenantId?.userId?.email || '',
+          phone: c.tenantId?.userId?.phone || '',
+          roomNumber: stay.roomNumber,
+          bedName: stay.bedName,
         },
       };
     });
@@ -86,7 +93,7 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/complaints - Raise a new complaint (Tenant or Owner on behalf of tenant)
+// POST /api/complaints - Raise a new complaint
 router.post('/', authenticate, async (req: Request, res: Response) => {
   try {
     const parseResult = createComplaintSchema.safeParse(req.body);
@@ -100,40 +107,35 @@ router.post('/', authenticate, async (req: Request, res: Response) => {
     let tenantId = req.body.tenantId;
 
     if (req.user?.role === 'TENANT') {
-      const userTenant = await prisma.tenant.findUnique({ where: { userId: req.user.id } });
-      if (!userTenant) {
-        return res.status(403).json({ error: 'Tenant profile not found for this user' });
+      const tenant = await Tenant.findOne({ userId: req.user.id });
+      if (!tenant) {
+        return res.status(403).json({ error: 'Tenant record not found for current session' });
       }
-      tenantId = userTenant.id;
+      tenantId = tenant._id;
     }
 
     if (!tenantId) {
-      return res.status(400).json({ error: 'Tenant ID is required' });
+      return res.status(400).json({ error: 'Tenant identification required' });
     }
 
     const { title, description, category, priority } = parseResult.data;
 
-    const complaint = await prisma.complaint.create({
-      data: {
-        tenantId,
-        title,
-        description,
-        category,
-        priority,
-        status: 'OPEN',
-      },
-      include: {
-        tenant: {
-          include: {
-            user: { select: { id: true, name: true, email: true, phone: true } },
-          },
-        },
-      },
+    const complaint = await Complaint.create({
+      tenantId,
+      title,
+      description,
+      category,
+      priority,
+      status: 'OPEN',
     });
 
     return res.status(201).json({
-      message: 'Complaint raised successfully',
-      complaint,
+      message: 'Work order ticket created successfully',
+      complaint: {
+        id: complaint._id.toString(),
+        title: complaint.title,
+        status: complaint.status,
+      },
     });
   } catch (err: any) {
     console.error('Error creating complaint:', err);
@@ -155,30 +157,25 @@ router.patch('/:id/status', authenticate, requireOwner, async (req: Request, res
 
     const { status, resolutionNotes } = parseResult.data;
 
-    const existing = await prisma.complaint.findUnique({ where: { id } });
-    if (!existing) {
-      return res.status(404).json({ error: 'Complaint not found' });
+    const complaint = await Complaint.findById(id);
+    if (!complaint) {
+      return res.status(404).json({ error: 'Ticket not found' });
     }
 
-    const updated = await prisma.complaint.update({
-      where: { id },
-      data: {
-        status,
-        resolutionNotes,
-        resolvedAt: status === 'RESOLVED' ? new Date() : null,
-      },
-      include: {
-        tenant: {
-          include: {
-            user: { select: { id: true, name: true, email: true, phone: true } },
-          },
-        },
-      },
-    });
+    complaint.status = status;
+    complaint.resolutionNotes = resolutionNotes;
+    if (status === 'RESOLVED') {
+      complaint.resolvedAt = new Date();
+    }
+    await complaint.save();
 
     return res.json({
-      message: `Complaint status updated to ${status}`,
-      complaint: updated,
+      message: `Work order status updated to ${status}`,
+      complaint: {
+        id: complaint._id.toString(),
+        status: complaint.status,
+        resolutionNotes: complaint.resolutionNotes,
+      },
     });
   } catch (err: any) {
     console.error('Error updating complaint:', err);

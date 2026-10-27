@@ -7,10 +7,8 @@ import {
   UserX,
   Search,
   Building2,
-  AlertCircle,
   Calendar,
   CreditCard,
-  ShieldCheck,
 } from 'lucide-react';
 
 interface TenantsPageProps {
@@ -37,7 +35,7 @@ export const TenantsPage: React.FC<TenantsPageProps> = ({
       const data = await api.getTenants();
       setTenants(data.tenants);
     } catch (err: any) {
-      setError(err.message || 'Failed to load tenants');
+      setError(err.message || 'Failed to load residents');
     } finally {
       setLoading(false);
     }
@@ -61,47 +59,47 @@ export const TenantsPage: React.FC<TenantsPageProps> = ({
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-xl border border-slate-200 shadow-xs">
         <div>
-          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Tenant Management</h1>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Resident Directory</h1>
           <p className="text-xs text-slate-500 mt-1">
-            Track active tenants, check-in new occupants, process move-outs with deposit settlement, and review balances.
+            Manage resident records, allocate beds, process move-out settlements, and audit rent balances.
           </p>
         </div>
         <button
           onClick={onOpenCheckIn}
-          className="inline-flex items-center px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-semibold hover:bg-indigo-700 shadow-sm transition-all"
+          className="inline-flex items-center px-3.5 py-2 bg-slate-900 text-white rounded-lg text-xs font-medium hover:bg-slate-800 transition-colors shadow-xs cursor-pointer"
         >
-          <UserCheck className="w-4 h-4 mr-1.5" />
-          Check-In Tenant
+          <UserCheck className="w-3.5 h-3.5 mr-1.5" />
+          Assign Resident
         </button>
       </div>
 
-      {/* Search & Filter Toolbar */}
-      <div className="flex flex-col sm:flex-row gap-3 justify-between items-center bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+      {/* Filter and Search Bar */}
+      <div className="flex flex-col sm:flex-row gap-3 justify-between items-center bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
         <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+          <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
           <input
             type="text"
-            placeholder="Search tenant by name or email..."
+            placeholder="Search by resident name or email..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
           />
         </div>
 
-        <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+        <div className="flex flex-wrap gap-1.5 w-full sm:w-auto">
           {[
-            { id: 'ALL', label: 'All Tenants' },
-            { id: 'ACTIVE', label: 'Active Stays' },
-            { id: 'UNASSIGNED', label: 'Unassigned / Past' },
+            { id: 'ALL', label: 'All Residents' },
+            { id: 'ACTIVE', label: 'Active Stay' },
+            { id: 'UNASSIGNED', label: 'Unassigned / Former' },
           ].map((tab) => (
             <button
               key={tab.id}
               onClick={() => setFilterState(tab.id as any)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
                 filterState === tab.id
-                  ? 'bg-indigo-600 text-white font-semibold shadow-xs'
+                  ? 'bg-slate-900 text-white font-semibold'
                   : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
               }`}
             >
@@ -114,32 +112,32 @@ export const TenantsPage: React.FC<TenantsPageProps> = ({
       {/* Tenants Table */}
       {loading ? (
         <div className="py-24 text-center text-slate-400">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent"></div>
-          <p className="mt-2 text-xs">Loading tenants roster...</p>
+          <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-slate-900 border-t-transparent"></div>
+          <p className="mt-2 text-xs">Loading resident database...</p>
         </div>
       ) : error ? (
-        <div className="p-4 bg-red-50 text-red-700 rounded-2xl border border-red-200 text-xs">
+        <div className="p-4 bg-red-50 text-red-700 rounded-lg border border-red-200 text-xs">
           {error}
         </div>
       ) : filteredTenants.length === 0 ? (
-        <div className="p-12 text-center text-slate-400 bg-white rounded-3xl border border-slate-200">
-          <Users className="w-10 h-10 mx-auto text-slate-300 mb-2" />
-          <p className="text-sm font-semibold text-slate-700">No tenants found</p>
-          <p className="text-xs text-slate-400 mt-1">Try adjusting your filters.</p>
+        <div className="p-12 text-center text-slate-400 bg-white rounded-xl border border-slate-200">
+          <Users className="w-8 h-8 mx-auto text-slate-300 mb-2" />
+          <p className="text-xs font-semibold text-slate-700">No residents match this criteria</p>
+          <p className="text-[11px] text-slate-400 mt-1">Adjust filters or create a new resident registration.</p>
         </div>
       ) : (
-        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-100">
+              <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] tracking-wider font-semibold border-b border-slate-200">
                 <tr>
-                  <th className="py-3 px-6">Tenant</th>
-                  <th className="py-3 px-6">Room & Bed</th>
-                  <th className="py-3 px-6">Check-In Date</th>
-                  <th className="py-3 px-6">Monthly Rent</th>
-                  <th className="py-3 px-6">Security Deposit</th>
-                  <th className="py-3 px-6 text-right">Rent Balance</th>
-                  <th className="py-3 px-6 text-right">Actions</th>
+                  <th className="py-2.5 px-5">Resident</th>
+                  <th className="py-2.5 px-5">Assigned Unit</th>
+                  <th className="py-2.5 px-5">Move-In Date</th>
+                  <th className="py-2.5 px-5">Monthly Tariff</th>
+                  <th className="py-2.5 px-5">Security Deposit</th>
+                  <th className="py-2.5 px-5 text-right">Rent Balance</th>
+                  <th className="py-2.5 px-5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -147,94 +145,94 @@ export const TenantsPage: React.FC<TenantsPageProps> = ({
                   const hasActive = !!tenant.activeStay;
 
                   return (
-                    <tr key={tenant.id} className="hover:bg-slate-50/60 transition-colors">
+                    <tr key={tenant.id} className="hover:bg-slate-50/80 transition-colors">
                       {/* Name & Contact */}
-                      <td className="py-4 px-6">
-                        <p className="font-bold text-slate-900 text-sm">{tenant.user.name}</p>
-                        <p className="text-slate-400 text-[11px]">{tenant.user.email}</p>
+                      <td className="py-3 px-5">
+                        <p className="font-semibold text-slate-900">{tenant.user.name}</p>
+                        <p className="text-slate-400 text-[10px]">{tenant.user.email}</p>
                         {tenant.user.phone && (
                           <p className="text-slate-500 text-[10px] mt-0.5">{tenant.user.phone}</p>
                         )}
                       </td>
 
-                      {/* Room & Bed */}
-                      <td className="py-4 px-6">
+                      {/* Unit & Bed */}
+                      <td className="py-3 px-5">
                         {hasActive ? (
                           <div>
-                            <span className="font-bold text-slate-800 text-xs flex items-center gap-1">
-                              <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+                            <span className="font-medium text-slate-900 text-xs flex items-center gap-1">
+                              <Building2 className="w-3.5 h-3.5 text-slate-500" />
                               Room {tenant.activeStay!.roomNumber} - {tenant.activeStay!.bedName}
                             </span>
-                            <span className="inline-block mt-0.5 px-2 py-0.2 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800">
-                              Active Stay
+                            <span className="inline-block mt-0.5 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                              Active Resident
                             </span>
                           </div>
                         ) : (
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-[11px] font-medium bg-slate-100 text-slate-600">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600">
                             Unassigned
                           </span>
                         )}
                       </td>
 
                       {/* Check-In Date */}
-                      <td className="py-4 px-6 text-slate-600">
+                      <td className="py-3 px-5 text-slate-600">
                         {hasActive ? (
-                          <span className="flex items-center gap-1">
-                            <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                          <span className="flex items-center gap-1 text-[11px]">
+                            <Calendar className="w-3 h-3 text-slate-400" />
                             {new Date(tenant.activeStay!.checkInDate).toLocaleDateString()}
                           </span>
                         ) : (
-                          <span className="text-slate-400">N/A</span>
+                          <span className="text-slate-400">—</span>
                         )}
                       </td>
 
-                      {/* Monthly Rent */}
-                      <td className="py-4 px-6">
+                      {/* Monthly Tariff */}
+                      <td className="py-3 px-5">
                         {hasActive ? (
-                          <span className="font-semibold text-slate-800">
+                          <span className="font-medium text-slate-800">
                             ₹{tenant.activeStay!.monthlyRent.toLocaleString('en-IN')}/mo
                           </span>
                         ) : (
-                          <span className="text-slate-400">N/A</span>
+                          <span className="text-slate-400">—</span>
                         )}
                       </td>
 
                       {/* Security Deposit */}
-                      <td className="py-4 px-6">
+                      <td className="py-3 px-5">
                         {hasActive ? (
                           <div>
-                            <span className="font-semibold text-slate-800">
+                            <span className="font-medium text-slate-800">
                               ₹{tenant.activeStay!.securityDeposit.toLocaleString('en-IN')}
                             </span>
-                            <span className="block text-[10px] text-indigo-600 font-medium">
+                            <span className="block text-[10px] text-slate-500 font-medium">
                               {tenant.activeStay!.depositStatus}
                             </span>
                           </div>
                         ) : (
-                          <span className="text-slate-400">N/A</span>
+                          <span className="text-slate-400">—</span>
                         )}
                       </td>
 
                       {/* Rent Balance */}
-                      <td className="py-4 px-6 text-right">
+                      <td className="py-3 px-5 text-right">
                         <div>
                           <span
-                            className={`font-bold text-sm ${
-                              tenant.totalBalance > 0 ? 'text-rose-600' : 'text-emerald-600'
+                            className={`font-bold ${
+                              tenant.totalBalance > 0 ? 'text-rose-700' : 'text-slate-700'
                             }`}
                           >
                             ₹{tenant.totalBalance.toLocaleString('en-IN')}
                           </span>
                           {tenant.hasOverdue && (
-                            <span className="block text-[10px] font-bold text-rose-600">
-                              ⚠️ {tenant.overdueCount} Overdue
+                            <span className="block text-[10px] font-semibold text-rose-700">
+                              {tenant.overdueCount} Overdue
                             </span>
                           )}
                         </div>
                       </td>
 
-                      {/* Action buttons */}
-                      <td className="py-4 px-6 text-right space-x-2">
+                      {/* Actions */}
+                      <td className="py-3 px-5 text-right space-x-1">
                         {hasActive ? (
                           <button
                             onClick={() =>
@@ -248,26 +246,25 @@ export const TenantsPage: React.FC<TenantsPageProps> = ({
                                 securityDeposit: tenant.activeStay!.securityDeposit,
                               })
                             }
-                            className="inline-flex items-center px-3 py-1 bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 rounded-xl text-xs font-semibold transition-all"
-                            title="Check out tenant"
+                            className="inline-flex items-center px-2.5 py-1 text-rose-700 hover:bg-rose-50 rounded text-xs font-medium border border-rose-200 transition-colors cursor-pointer"
                           >
-                            <UserX className="w-3.5 h-3.5 mr-1" />
-                            Check-Out
+                            <UserX className="w-3 h-3 mr-1" />
+                            Move-Out
                           </button>
                         ) : (
                           <button
                             onClick={onOpenCheckIn}
-                            className="inline-flex items-center px-3 py-1 bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 rounded-xl text-xs font-semibold transition-all"
+                            className="inline-flex items-center px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded text-xs font-medium transition-colors cursor-pointer"
                           >
-                            <UserCheck className="w-3.5 h-3.5 mr-1" />
-                            Assign Bed
+                            <UserCheck className="w-3 h-3 mr-1" />
+                            Assign
                           </button>
                         )}
 
                         <button
                           onClick={() => onViewRentHistory(tenant.id)}
-                          className="inline-flex items-center px-2.5 py-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl text-xs font-medium"
-                          title="View rent ledger"
+                          className="inline-flex items-center px-2 py-1 text-slate-500 hover:text-slate-900 rounded text-xs cursor-pointer"
+                          title="View Ledger"
                         >
                           <CreditCard className="w-3.5 h-3.5" />
                         </button>

@@ -9,7 +9,6 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (data: any) => Promise<void>;
   logout: () => void;
-  quickSwitch: (email: string) => Promise<void>;
   refreshUser: () => Promise<void>;
 }
 
@@ -57,15 +56,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(data.user);
   };
 
-  const quickSwitch = async (email: string) => {
-    setLoading(true);
-    try {
-      await login(email, 'password123');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const logout = () => {
     localStorage.removeItem('stayhaven_token');
     setToken(null);
@@ -81,7 +71,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         login,
         register,
         logout,
-        quickSwitch,
         refreshUser,
       }}
     >

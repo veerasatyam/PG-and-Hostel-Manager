@@ -1,7 +1,10 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
-import prisma from '../db';
+import { User } from '../models/User';
+import { Tenant } from '../models/Tenant';
+import { BedOccupancy } from '../models/BedOccupancy';
+import { Room } from '../models/Room';
 import { authenticate, signToken } from '../middleware/auth';
 
 const router = Router();
@@ -34,53 +37,48 @@ router.post('/register', async (req: Request, res: Response) => {
 
     const { name, email, password, role, phone, emergencyContact, idProofNumber } = parseResult.data;
 
-    const existingUser = await prisma.user.findUnique({ where: { email } });
+    const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(409).json({ error: 'An account with this email already exists' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const user = await prisma.user.create({
-      data: {
-        name,
-        email,
-        password: hashedPassword,
-        phone,
-        role,
-        ...(role === 'TENANT'
-          ? {
-              tenant: {
-                create: {
-                  emergencyContact,
-                  idProofNumber,
-                },
-              },
-            }
-          : {}),
-      },
-      include: {
-        tenant: true,
-      },
+    const user = await User.create({
+      name,
+      email,
+      password: hashedPassword,
+      phone,
+      role,
     });
 
+    let tenantProfile = null;
+    if (role === 'TENANT') {
+      tenantProfile = await Tenant.create({
+        userId: user._id,
+        emergencyContact,
+        idProofNumber,
+      });
+    }
+
     const token = signToken({
-      id: user.id,
+      id: user._id.toString(),
       email: user.email,
       name: user.name,
       role: user.role,
+      tenantId: tenantProfile ? tenantProfile._id.toString() : undefined,
     });
 
     return res.status(201).json({
-      message: 'Account created successfully',
+      message: 'Account registered successfully',
       token,
       user: {
-        id: user.id,
+        id: user._id.toString(),
         name: user.name,
         email: user.email,
         role: user.role,
         phone: user.phone,
-        tenantId: user.tenant?.id,
+        tenantId: tenantProfile ? tenantProfile._id.toString() : undefined,
       },
     });
   } catch (err: any) {
@@ -102,26 +100,7 @@ router.post('/login', async (req: Request, res: Response) => {
 
     const { email, password } = parseResult.data;
 
-    const user = await prisma.user.findUnique({
-      where: { email },
-      include: {
-        tenant: {
-          include: {
-            occupancies: {
-              where: { status: 'ACTIVE' },
-              include: {
-                bed: {
-                  include: {
-                    room: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
-
+    const user = await User.findOne({ email });
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
@@ -131,35 +110,49 @@ router.post('/login', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
+    let tenantProfile = null;
+    let activeStay = null;
+
+    if (user.role === 'TENANT') {
+      tenantProfile = await Tenant.findOne({ userId: user._id });
+      if (tenantProfile) {
+        const occ = await BedOccupancy.findOne({ tenantId: tenantProfile._id, status: 'ACTIVE' }).populate('roomId');
+        if (occ && occ.roomId) {
+          const room: any = occ.roomId;
+          const bed = room.beds?.find((b: any) => b._id.toString() === occ.bedId.toString());
+          activeStay = {
+            occupancyId: occ._id.toString(),
+            roomId: room._id.toString(),
+            roomNumber: room.number,
+            bedId: occ.bedId.toString(),
+            bedName: bed?.name || 'Bed',
+            monthlyRent: occ.monthlyRent,
+            checkInDate: occ.checkInDate,
+            securityDeposit: occ.securityDeposit,
+          };
+        }
+      }
+    }
+
     const token = signToken({
-      id: user.id,
+      id: user._id.toString(),
       email: user.email,
       name: user.name,
       role: user.role,
+      tenantId: tenantProfile ? tenantProfile._id.toString() : undefined,
     });
-
-    const activeOccupancy = user.tenant?.occupancies?.[0];
 
     return res.json({
       message: 'Login successful',
       token,
       user: {
-        id: user.id,
+        id: user._id.toString(),
         name: user.name,
         email: user.email,
         role: user.role,
         phone: user.phone,
-        tenantId: user.tenant?.id,
-        activeStay: activeOccupancy
-          ? {
-              occupancyId: activeOccupancy.id,
-              roomNumber: activeOccupancy.bed.room.number,
-              bedName: activeOccupancy.bed.name,
-              monthlyRent: activeOccupancy.monthlyRent,
-              checkInDate: activeOccupancy.checkInDate,
-              securityDeposit: activeOccupancy.securityDeposit,
-            }
-          : null,
+        tenantId: tenantProfile ? tenantProfile._id.toString() : undefined,
+        activeStay,
       },
     });
   } catch (err: any) {
@@ -171,59 +164,48 @@ router.post('/login', async (req: Request, res: Response) => {
 // GET /api/auth/me
 router.get('/me', authenticate, async (req: Request, res: Response) => {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: req.user!.id },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        phone: true,
-        tenant: {
-          include: {
-            occupancies: {
-              where: { status: 'ACTIVE' },
-              include: {
-                bed: {
-                  include: {
-                    room: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
-
+    const user = await User.findById(req.user!.id);
     if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+      return res.status(404).json({ error: 'User profile not found' });
     }
 
-    const activeOccupancy = user.tenant?.occupancies?.[0];
+    let tenantProfile = null;
+    let activeStay = null;
+
+    if (user.role === 'TENANT') {
+      tenantProfile = await Tenant.findOne({ userId: user._id });
+      if (tenantProfile) {
+        const occ = await BedOccupancy.findOne({ tenantId: tenantProfile._id, status: 'ACTIVE' }).populate('roomId');
+        if (occ && occ.roomId) {
+          const room: any = occ.roomId;
+          const bed = room.beds?.find((b: any) => b._id.toString() === occ.bedId.toString());
+          activeStay = {
+            occupancyId: occ._id.toString(),
+            roomId: room._id.toString(),
+            roomNumber: room.number,
+            bedId: occ.bedId.toString(),
+            bedName: bed?.name || 'Bed',
+            monthlyRent: occ.monthlyRent,
+            checkInDate: occ.checkInDate,
+            securityDeposit: occ.securityDeposit,
+          };
+        }
+      }
+    }
 
     return res.json({
       user: {
-        id: user.id,
+        id: user._id.toString(),
         name: user.name,
         email: user.email,
         role: user.role,
         phone: user.phone,
-        tenantId: user.tenant?.id,
-        activeStay: activeOccupancy
-          ? {
-              occupancyId: activeOccupancy.id,
-              roomNumber: activeOccupancy.bed.room.number,
-              bedName: activeOccupancy.bed.name,
-              monthlyRent: activeOccupancy.monthlyRent,
-              checkInDate: activeOccupancy.checkInDate,
-              securityDeposit: activeOccupancy.securityDeposit,
-            }
-          : null,
+        tenantId: tenantProfile ? tenantProfile._id.toString() : undefined,
+        activeStay,
       },
     });
   } catch (err: any) {
-    return res.status(500).json({ error: 'Server error retrieving user' });
+    return res.status(500).json({ error: 'Failed to retrieve user' });
   }
 });
 

@@ -1,6 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import prisma from '../db';
+import { Payment } from '../models/Payment';
+import { RentRecord } from '../models/RentRecord';
+import { BedOccupancy } from '../models/BedOccupancy';
+import { Tenant } from '../models/Tenant';
+import { Room } from '../models/Room';
 import { authenticate, requireOwner } from '../middleware/auth';
 import { isBefore, startOfDay } from 'date-fns';
 
@@ -14,7 +18,7 @@ const createPaymentSchema = z.object({
   notes: z.string().optional(),
 });
 
-// POST /api/payments - Record a payment (Full or Part payment)
+// POST /api/payments - Record a payment
 router.post('/', authenticate, requireOwner, async (req: Request, res: Response) => {
   try {
     const parseResult = createPaymentSchema.safeParse(req.body);
@@ -27,24 +31,18 @@ router.post('/', authenticate, requireOwner, async (req: Request, res: Response)
 
     const { rentRecordId, amount, paymentMethod, transactionRef, notes } = parseResult.data;
 
-    const rentRecord = await prisma.rentRecord.findUnique({
-      where: { id: rentRecordId },
-      include: {
-        tenant: { include: { user: true } },
-      },
-    });
-
+    const rentRecord = await RentRecord.findById(rentRecordId);
     if (!rentRecord) {
-      return res.status(404).json({ error: 'Rent record not found' });
+      return res.status(404).json({ error: 'Rent invoice not found' });
     }
 
     if (rentRecord.balance <= 0) {
-      return res.status(400).json({ error: 'This rent record is already fully paid' });
+      return res.status(400).json({ error: 'This rent record is already fully settled' });
     }
 
     if (amount > rentRecord.balance) {
       return res.status(400).json({
-        error: `Payment amount (₹${amount}) exceeds outstanding balance (₹${rentRecord.balance})`,
+        error: `Payment amount (₹${amount}) exceeds remaining balance (₹${rentRecord.balance})`,
       });
     }
 
@@ -65,43 +63,39 @@ router.post('/', authenticate, requireOwner, async (req: Request, res: Response)
       newStatus = 'DUE';
     }
 
-    const result = await prisma.$transaction(async (tx) => {
-      const payment = await tx.payment.create({
-        data: {
-          rentRecordId,
-          amount,
-          paymentDate: now,
-          paymentMethod,
-          transactionRef,
-          notes,
-          receiptNumber,
-        },
-      });
-
-      const updatedRent = await tx.rentRecord.update({
-        where: { id: rentRecordId },
-        data: {
-          paidAmount: newPaidAmount,
-          balance: newBalance,
-          status: newStatus,
-        },
-        include: {
-          tenant: { include: { user: true } },
-          occupancy: { include: { bed: { include: { room: true } } } },
-          payments: { orderBy: { paymentDate: 'desc' } },
-        },
-      });
-
-      return { payment, updatedRent };
+    const payment = await Payment.create({
+      rentRecordId: rentRecord._id,
+      amount,
+      paymentDate: now,
+      paymentMethod,
+      transactionRef,
+      notes,
+      receiptNumber,
     });
+
+    rentRecord.paidAmount = newPaidAmount;
+    rentRecord.balance = newBalance;
+    rentRecord.status = newStatus;
+    await rentRecord.save();
 
     return res.status(201).json({
       message: `Payment of ₹${amount} recorded successfully. Receipt #${receiptNumber}`,
-      payment: result.payment,
-      rentRecord: result.updatedRent,
+      payment: {
+        id: payment._id.toString(),
+        amount: payment.amount,
+        receiptNumber: payment.receiptNumber,
+        paymentDate: payment.paymentDate,
+        paymentMethod: payment.paymentMethod,
+      },
+      rentRecord: {
+        id: rentRecord._id.toString(),
+        paidAmount: rentRecord.paidAmount,
+        balance: rentRecord.balance,
+        status: rentRecord.status,
+      },
     });
   } catch (err: any) {
-    console.error('Payment recording error:', err);
+    console.error('Payment error:', err);
     return res.status(500).json({ error: 'Failed to record payment' });
   }
 });
@@ -111,29 +105,29 @@ router.get('/receipt/:receiptNumber', authenticate, async (req: Request, res: Re
   try {
     const { receiptNumber } = req.params;
 
-    const payment = await prisma.payment.findUnique({
-      where: { receiptNumber },
-      include: {
-        rentRecord: {
-          include: {
-            tenant: { include: { user: true } },
-            occupancy: { include: { bed: { include: { room: true } } } },
-          },
-        },
-      },
-    });
-
+    const payment = await Payment.findOne({ receiptNumber }).lean();
     if (!payment) {
-      return res.status(404).json({ error: 'Receipt not found' });
+      return res.status(404).json({ error: 'Receipt record not found' });
     }
 
-    // Role check: Tenants can only view their own receipts
-    if (req.user?.role === 'TENANT') {
-      const userTenant = await prisma.tenant.findUnique({ where: { userId: req.user.id } });
-      if (!userTenant || userTenant.id !== payment.rentRecord.tenantId) {
-        return res.status(403).json({ error: 'Unauthorized to view this receipt' });
-      }
+    const rentRecord = await RentRecord.findById(payment.rentRecordId)
+      .populate({
+        path: 'tenantId',
+        populate: { path: 'userId', select: 'name email phone' },
+      })
+      .populate({
+        path: 'occupancyId',
+        populate: { path: 'roomId', select: 'number beds' },
+      })
+      .lean();
+
+    if (!rentRecord) {
+      return res.status(404).json({ error: 'Associated billing record not found' });
     }
+
+    const room = (rentRecord.occupancyId as any)?.roomId;
+    const bedId = (rentRecord.occupancyId as any)?.bedId;
+    const bed = room?.beds?.find((b: any) => b._id.toString() === bedId?.toString());
 
     const receipt = {
       receiptNumber: payment.receiptNumber,
@@ -143,24 +137,24 @@ router.get('/receipt/:receiptNumber', authenticate, async (req: Request, res: Re
       transactionRef: payment.transactionRef || 'N/A',
       notes: payment.notes || '',
       tenant: {
-        name: payment.rentRecord.tenant.user.name,
-        email: payment.rentRecord.tenant.user.email,
-        phone: payment.rentRecord.tenant.user.phone,
-        emergencyContact: payment.rentRecord.tenant.emergencyContact,
+        name: (rentRecord.tenantId as any)?.userId?.name || 'Resident',
+        email: (rentRecord.tenantId as any)?.userId?.email || '',
+        phone: (rentRecord.tenantId as any)?.userId?.phone || '',
+        emergencyContact: (rentRecord.tenantId as any)?.emergencyContact,
       },
       room: {
-        roomNumber: payment.rentRecord.occupancy?.bed.room.number || 'N/A',
-        bedName: payment.rentRecord.occupancy?.bed.name || 'N/A',
+        roomNumber: room?.number || 'N/A',
+        bedName: bed?.name || 'Bed',
       },
       rentPeriod: {
-        month: payment.rentRecord.month,
-        year: payment.rentRecord.year,
-        totalRentDue: payment.rentRecord.amount,
-        totalPaidToDate: payment.rentRecord.paidAmount,
-        remainingBalance: payment.rentRecord.balance,
-        status: payment.rentRecord.status,
-        isProRated: payment.rentRecord.isProRated,
-        proRatedNotes: payment.rentRecord.proRatedCalculationNotes,
+        month: rentRecord.month,
+        year: rentRecord.year,
+        totalRentDue: rentRecord.amount,
+        totalPaidToDate: rentRecord.paidAmount,
+        remainingBalance: rentRecord.balance,
+        status: rentRecord.status,
+        isProRated: rentRecord.isProRated,
+        proRatedNotes: rentRecord.proRatedCalculationNotes,
       },
     };
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { api } from '../api';
-import { Calendar, UserCheck, ShieldCheck, AlertCircle } from 'lucide-react';
+import { Calendar, UserCheck, AlertCircle } from 'lucide-react';
 
 interface CheckInModalProps {
   isOpen: boolean;
@@ -55,7 +55,7 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
         setTenantId(tenantsRes.tenants[0].id);
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to load beds or tenants');
+      setError(err.message || 'Failed to load beds or residents');
     } finally {
       setLoading(false);
     }
@@ -69,7 +69,6 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
     }
   };
 
-  // Live calculation of pro-rated preview
   const getProRatedPreview = () => {
     if (!checkInDate || !monthlyRent) return null;
     const date = new Date(checkInDate);
@@ -77,7 +76,7 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
 
     const day = date.getDate();
     const year = date.getFullYear();
-    const month = date.getMonth(); // 0-indexed
+    const month = date.getMonth();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
     if (day === 1) {
@@ -105,7 +104,7 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!tenantId) {
-      setError('Please select a tenant');
+      setError('Please select a resident');
       return;
     }
     if (!bedId) {
@@ -128,39 +127,38 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
       onSuccess();
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Failed to check in tenant');
+      setError(err.message || 'Failed to assign bed');
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Check-In Tenant to Bed" maxWidth="max-w-lg">
+    <Modal isOpen={isOpen} onClose={onClose} title="Assign Resident to Bed" maxWidth="max-w-lg">
       {error && (
-        <div className="mb-4 rounded-xl bg-red-50 p-3.5 text-xs text-red-700 border border-red-200 flex items-start space-x-2">
+        <div className="mb-4 rounded-lg bg-red-50 p-3 text-xs text-red-700 border border-red-200 flex items-start space-x-2">
           <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
       {loading ? (
-        <div className="py-8 text-center text-slate-500 text-sm">Loading free beds and tenants...</div>
+        <div className="py-8 text-center text-slate-500 text-xs">Loading available inventory...</div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Tenant Selector */}
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
-              Select Tenant <span className="text-red-500">*</span>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Select Resident <span className="text-red-500">*</span>
             </label>
             {unassignedTenants.length === 0 ? (
-              <p className="text-xs text-amber-600 bg-amber-50 p-2.5 rounded-lg border border-amber-200">
-                All registered tenants currently have an active bed assigned. Register a new tenant first or check one out.
+              <p className="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                All residents currently have active bed allocations. Register a new resident first.
               </p>
             ) : (
               <select
                 value={tenantId}
                 onChange={(e) => setTenantId(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
                 required
               >
                 {unassignedTenants.map((t) => (
@@ -172,128 +170,109 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
             )}
           </div>
 
-          {/* Bed Selector */}
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
               Select Available Bed <span className="text-red-500">*</span>
             </label>
             {availableBeds.length === 0 ? (
               <p className="text-xs text-red-600 bg-red-50 p-2.5 rounded-lg border border-red-200">
-                No beds are currently available. All beds are 100% occupied or in maintenance!
+                All beds in inventory are currently 100% occupied.
               </p>
             ) : (
               <select
                 value={bedId}
                 onChange={(e) => handleBedChange(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
                 required
               >
                 {availableBeds.map((b) => (
                   <option key={b.id} value={b.id}>
-                    Room {b.room.number} - {b.name} ({b.room.type}, {b.room.hasAc ? 'AC' : 'Non-AC'} - ₹{b.room.baseRent}/mo)
+                    Room {b.room.number} - {b.name} ({b.room.type.replace('_', ' ')}, {b.room.hasAc ? 'AC' : 'Non-AC'} — ₹{b.room.baseRent}/mo)
                   </option>
                 ))}
               </select>
             )}
           </div>
 
-          {/* Check-In Date */}
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
               Check-In Date <span className="text-red-500">*</span>
             </label>
-            <div className="relative">
-              <input
-                type="date"
-                value={checkInDate}
-                onChange={(e) => setCheckInDate(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                required
-              />
-            </div>
+            <input
+              type="date"
+              value={checkInDate}
+              onChange={(e) => setCheckInDate(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
+              required
+            />
           </div>
 
-          {/* Pricing Row */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
-                Monthly Rent (₹) <span className="text-red-500">*</span>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Agreed Monthly Tariff (₹) <span className="text-red-500">*</span>
               </label>
               <input
                 type="number"
                 min="100"
                 value={monthlyRent}
                 onChange={(e) => setMonthlyRent(Number(e.target.value))}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
                 required
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
-                Security Deposit (₹)
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Security Deposit Held (₹)
               </label>
               <input
                 type="number"
                 min="0"
                 value={securityDeposit}
                 onChange={(e) => setSecurityDeposit(Number(e.target.value))}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
               />
             </div>
           </div>
 
-          {/* Live Pro-rated rent preview banner */}
+          {/* Pro-rated Rent Notice */}
           {proRatedPreview && (
-            <div className={`p-3.5 rounded-xl border text-xs ${
-              proRatedPreview.isProRated
-                ? 'bg-amber-50 border-amber-200 text-amber-900'
-                : 'bg-emerald-50 border-emerald-200 text-emerald-900'
-            }`}>
-              <div className="flex items-center space-x-2 font-semibold">
-                {proRatedPreview.isProRated ? (
-                  <>
-                    <Calendar className="w-4 h-4 text-amber-600" />
-                    <span>Mid-Month Check-in Detected (Pro-rated Rent)</span>
-                  </>
-                ) : (
-                  <>
-                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                    <span>Full Month Check-in (Day 1)</span>
-                  </>
-                )}
+            <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 text-xs text-slate-700">
+              <div className="flex items-center space-x-1.5 font-semibold text-slate-900 mb-0.5">
+                <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                <span>
+                  {proRatedPreview.isProRated ? 'Mid-Month Check-in Assessment' : 'Full Month Assessment'}
+                </span>
               </div>
-              <p className="mt-1">
+              <p className="text-[11px] text-slate-600 mt-1">
                 {proRatedPreview.isProRated ? (
                   <>
-                    Active for <strong>{proRatedPreview.activeDays} days</strong> of {proRatedPreview.totalDays} days in month.{' '}
-                    Initial rent due: <strong className="text-base font-bold text-amber-800">₹{proRatedPreview.amount.toLocaleString('en-IN')}</strong>{' '}
-                    (Standard rate: ₹{monthlyRent})
+                    Resident active for <strong>{proRatedPreview.activeDays} of {proRatedPreview.totalDays} days</strong> this month. First invoice pro-rated to: <strong className="text-slate-900 font-bold">₹{proRatedPreview.amount.toLocaleString('en-IN')}</strong>.
                   </>
                 ) : (
                   <>
-                    Initial rent due: <strong className="text-base font-bold text-emerald-800">₹{proRatedPreview.amount.toLocaleString('en-IN')}</strong>
+                    First month invoice: <strong className="text-slate-900 font-bold">₹{proRatedPreview.amount.toLocaleString('en-IN')}</strong>.
                   </>
                 )}
               </p>
             </div>
           )}
 
-          {/* Action buttons */}
           <div className="pt-3 flex justify-end gap-2 border-t border-slate-100">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 text-sm font-medium hover:bg-slate-50"
+              className="px-4 py-2 border border-slate-200 rounded-lg text-slate-600 text-xs font-medium hover:bg-slate-50 cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting || availableBeds.length === 0 || unassignedTenants.length === 0}
-              className="inline-flex items-center px-5 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 shadow-sm disabled:opacity-50 transition-all"
+              className="inline-flex items-center px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-medium hover:bg-slate-800 disabled:opacity-50 transition-colors cursor-pointer"
             >
-              <UserCheck className="w-4 h-4 mr-1.5" />
-              {submitting ? 'Checking In...' : 'Confirm Check-In'}
+              <UserCheck className="w-3.5 h-3.5 mr-1.5" />
+              {submitting ? 'Assigning...' : 'Confirm Assignment'}
             </button>
           </div>
         </form>

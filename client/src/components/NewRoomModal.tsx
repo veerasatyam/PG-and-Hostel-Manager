@@ -46,16 +46,16 @@ export const NewRoomModal: React.FC<NewRoomModalProps> = ({ isOpen, onClose, onS
       onSuccess();
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Failed to create room');
+      setError(err.message || 'Failed to create room unit');
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Add New PG Room & Beds" maxWidth="max-w-md">
+    <Modal isOpen={isOpen} onClose={onClose} title="Add New Accommodation Unit" maxWidth="max-w-md">
       {error && (
-        <div className="mb-4 rounded-xl bg-red-50 p-3 text-xs text-red-700 border border-red-200 flex items-start space-x-2">
+        <div className="mb-4 rounded-lg bg-red-50 p-3 text-xs text-red-700 border border-red-200 flex items-start space-x-2">
           <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
           <span>{error}</span>
         </div>
@@ -64,8 +64,8 @@ export const NewRoomModal: React.FC<NewRoomModalProps> = ({ isOpen, onClose, onS
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
-              Room Number <span className="text-red-500">*</span>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Room Identifier / Number <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
@@ -73,11 +73,11 @@ export const NewRoomModal: React.FC<NewRoomModalProps> = ({ isOpen, onClose, onS
               placeholder="e.g. 101, 204B"
               value={number}
               onChange={(e) => setNumber(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
               Floor
             </label>
             <input
@@ -86,30 +86,30 @@ export const NewRoomModal: React.FC<NewRoomModalProps> = ({ isOpen, onClose, onS
               max="20"
               value={floor}
               onChange={(e) => setFloor(Number(e.target.value))}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
             />
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
-              Sharing Type
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Occupancy Type
             </label>
             <select
               value={type}
               onChange={(e) => handleTypeChange(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
             >
-              <option value="SINGLE">Single Room (Private)</option>
+              <option value="SINGLE">Single Room (1 Bed)</option>
               <option value="DOUBLE">Double Sharing (2 Beds)</option>
               <option value="TRIPLE">Triple Sharing (3 Beds)</option>
               <option value="FOUR_SHARING">Four Sharing (4 Beds)</option>
             </select>
           </div>
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
-              Bed Count
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Bed Capacity
             </label>
             <input
               type="number"
@@ -117,15 +117,15 @@ export const NewRoomModal: React.FC<NewRoomModalProps> = ({ isOpen, onClose, onS
               max="10"
               value={bedCount}
               onChange={(e) => setBedCount(Number(e.target.value))}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
             />
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3 items-center">
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
-              Monthly Base Rent (₹) <span className="text-red-500">*</span>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Monthly Base Tariff (₹) <span className="text-red-500">*</span>
             </label>
             <input
               type="number"
@@ -133,18 +133,18 @@ export const NewRoomModal: React.FC<NewRoomModalProps> = ({ isOpen, onClose, onS
               required
               value={baseRent}
               onChange={(e) => setBaseRent(Number(e.target.value))}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
             />
           </div>
-          <div className="pt-5">
-            <label className="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
+          <div className="pt-4">
+            <label className="flex items-center space-x-2 text-xs text-slate-700 cursor-pointer">
               <input
                 type="checkbox"
                 checked={hasAc}
                 onChange={(e) => setHasAc(e.target.checked)}
-                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                className="rounded border-slate-300 text-slate-900 focus:ring-slate-900 h-4 w-4"
               />
-              <span className="font-medium text-xs">Air Conditioned (AC)</span>
+              <span className="font-medium">Air Conditioned (AC)</span>
             </label>
           </div>
         </div>
@@ -153,17 +153,17 @@ export const NewRoomModal: React.FC<NewRoomModalProps> = ({ isOpen, onClose, onS
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 text-sm font-medium hover:bg-slate-50"
+            className="px-4 py-2 border border-slate-200 rounded-lg text-slate-600 text-xs font-medium hover:bg-slate-50 cursor-pointer"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={submitting}
-            className="inline-flex items-center px-5 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 shadow-sm disabled:opacity-50 transition-all"
+            className="inline-flex items-center px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-medium hover:bg-slate-800 disabled:opacity-50 transition-colors cursor-pointer"
           >
-            <Building2 className="w-4 h-4 mr-1.5" />
-            {submitting ? 'Creating...' : 'Create Room & Beds'}
+            <Building2 className="w-3.5 h-3.5 mr-1.5" />
+            {submitting ? 'Creating...' : 'Create Unit'}
           </button>
         </div>
       </form>
