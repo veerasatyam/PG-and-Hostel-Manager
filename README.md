@@ -189,16 +189,3 @@ Example:
 ### 4. Stretch Features Included
 - **Printable & Downloadable Receipts**: Generates clean printable rent invoice receipts with print media CSS targeting `#printable-receipt` for 1-click **Save as PDF** or physical printing.
 - **Security Deposit Deductions**: Move-out workflow deducts damage, cleaning, or utility fees, computes net refund, and releases the bed.
-
----
-
-## 📹 Video Walkthrough Guide (3–5 Minutes)
-
-1. **Introduction (30s)**: Introduce StayHaven as a full-stack PG property management system backed by MongoDB and Node.js.
-2. **Dashboard Overview (1m)**: Show real-time occupancy gauge, rent collected this month, and the Delinquent Overdue Accounts table.
-3. **Core Workflow Demo (1.5m)**:
-   - **Move-in assignment**: Select a resident and bed; show the pro-rated rent preview for mid-month move-in.
-   - **Double-booking prevention**: Attempt to assign another resident to the same bed and demonstrate the server 409 Conflict rejection.
-   - **Partial payment**: Record a partial payment (e.g., ₹2,000 against ₹4,403), show the balance recalculation, and generate the printable receipt.
-   - **Resident Portal & Maintenance**: Sign in as a resident, view accommodation details, and submit a maintenance work order.
-4. **Hard Problem Solved (1m)**: Explain how mid-month pro-rating dynamically adapts to month day counts (including leap years) and how MongoDB indexes and occupancy status prevent bed collisions.
