@@ -6,3 +6,6 @@ build
 dev.db
 dev.db-journal
 .DS_Store
+video_build/
+*.mp3
+test_login.js

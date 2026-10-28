@@ -2,6 +2,8 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { connectDB } from './db';
+import { User } from './models/User';
+import { seedDatabase } from './seed';
 import authRouter from './routes/auth';
 import roomsRouter from './routes/rooms';
 import tenantsRouter from './routes/tenants';
@@ -58,7 +60,13 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 
 if (process.env.NODE_ENV !== 'test') {
   connectDB()
-    .then(() => {
+    .then(async () => {
+      // Auto-seed if database is empty (ensures immediate ready-to-use evaluation)
+      const count = await User.countDocuments();
+      if (count === 0) {
+        console.log('Database is empty. Running initial seed...');
+        await seedDatabase(false);
+      }
       app.listen(PORT, () => {
         console.log(`⚡ StayHaven API Server running on http://localhost:${PORT}`);
       });

@@ -9,7 +9,7 @@ import { RentRecord } from './models/RentRecord';
 import { Payment } from './models/Payment';
 import { Complaint } from './models/Complaint';
 
-async function seed() {
+export async function seedDatabase(shouldDisconnect = false) {
   console.log('🌱 Initializing StayHaven MongoDB database...');
   await connectDB();
 
@@ -234,10 +234,14 @@ async function seed() {
 
   console.log('✅ Database initialization complete.');
   console.log('Manager credentials: admin@stayhaven.com / password123');
-  await disconnectDB();
+  if (shouldDisconnect) {
+    await disconnectDB();
+  }
 }
 
-seed().catch((err) => {
-  console.error('Seed failed:', err);
-  process.exit(1);
-});
+if (process.argv[1] && process.argv[1].includes('seed')) {
+  seedDatabase(true).catch((err) => {
+    console.error('Seed failed:', err);
+    process.exit(1);
+  });
+}
