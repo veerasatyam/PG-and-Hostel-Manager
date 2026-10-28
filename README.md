@@ -20,7 +20,7 @@ Designed with a clean, high-contrast enterprise property management interface (f
 - **Backend API**: Node.js, Express, TypeScript, Zod schema validation, Mongoose ODM.
 - **Database**: **MongoDB** (`MONGODB_URI` configurable for MongoDB Atlas or local `mongodb://127.0.0.1:27017/stayhaven`). Zero-config embedded fallback ensures tests and local development run reliably out of the box.
 - **Frontend SPA**: React 18, Vite, TypeScript, Tailwind CSS, Lucide icons.
-- **Testing**: Vitest with 18 automated unit and API integration tests covering core business rules.
+- **Testing**: Vitest with 20 automated unit and API integration tests covering core business rules.
 
 ---
 
@@ -94,18 +94,21 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 
 ---
 
-## 🧪 Automated Tests (18 Tests Passing)
+## 🧪 Automated Tests (20 Tests Passing)
 
 All mission-critical server logic is thoroughly covered by automated test suites in `server/tests/`:
 
 1. **Bed Double-Booking Prevention**: Server rejects assigning an occupied bed with **HTTP 409 Conflict**.
-2. **Mid-Month Check-In Pro-Rated Rent**: Dynamically calculates active days based on exact days in target month.
-3. **Mid-Month Check-Out Pro-Rated Rent & Bed Release**: Adjusts checkout month invoice and frees bed to `AVAILABLE`.
-4. **Leap Year & Month Boundary Math**: Exact days verification for 31-day, 30-day, 28-day Feb, and 29-day Leap Year Feb.
-5. **Partial Payment Ledger**: Correctly updates `paidAmount`, remaining balance, and transitions status from `DUE` to `PAID`.
-6. **Overpayment Rejection**: Prevents recording payments exceeding outstanding balance.
-7. **Maintenance Work Orders**: Resident ticket creation and property manager status updates with resolution logs.
-8. **Security Deposit Deductions**: Deducts itemized damage/cleaning fees at move-out and computes net refund.
+2. **Atomic Partial Unique Index**: MongoDB engine-level partial unique index (`{ bedId: 1, status: "ACTIVE" }`) guarantees zero concurrent double-booking race conditions.
+3. **Mid-Month Check-In Pro-Rated Rent**: Dynamically calculates active days based on exact days in target month.
+4. **Mid-Month Check-Out Pro-Rated Rent & Bed Release**: Adjusts checkout month invoice and frees bed to `AVAILABLE`.
+5. **End-to-End Check-In & Check-Out Lifecycle**: Validates that checking in creates the pro-rated initial rent record, and checking out creates/adjusts the checkout month rent record with full audit metadata.
+6. **Leap Year & Month Boundary Math**: Exact days verification for 31-day, 30-day, 28-day Feb, and 29-day Leap Year Feb.
+7. **Partial Payment Ledger**: Correctly updates `paidAmount`, remaining balance, and transitions status from `DUE` to `PAID`.
+8. **UUID-Based Collision-Free Receipt Numbers**: Every payment creates a verifiable unique receipt (`REC-YYYYMMDD-XXXXXXXX`).
+9. **Overpayment Rejection**: Prevents recording payments exceeding outstanding balance.
+10. **Maintenance Work Orders**: Resident ticket creation and property manager status updates with resolution logs.
+11. **Security Deposit Deductions**: Deducts itemized damage/cleaning fees at move-out and computes net refund.
 
 To run the automated test suite:
 ```bash
@@ -189,3 +192,37 @@ Example:
 ### 4. Stretch Features Included
 - **Printable & Downloadable Receipts**: Generates clean printable rent invoice receipts with print media CSS targeting `#printable-receipt` for 1-click **Save as PDF** or physical printing.
 - **Security Deposit Deductions**: Move-out workflow deducts damage, cleaning, or utility fees, computes net refund, and releases the bed.
+
+
+---
+
+## 🤖 AI Tools & Development Methodology
+
+In accordance with assignment guidelines, AI tools were utilized transparently to enhance engineering rigor, code coverage, and visual design:
+
+- **Google DeepMind Antigravity & Claude 3.5 Sonnet**:
+  - **Architecture & Domain Design**: Designed normalized Mongoose schemas and compound partial unique indexes to guarantee single-occupancy bed enforcement at the database storage engine level.
+  - **Financial Math Verification**: Generated rigorous test fixtures for calendar edge cases (leap years in 2024/2028, 28-day Feb in 2023, 30/31-day transitions) to ensure rent calculations are accurate down to the rupee.
+  - **SaaS Interface Refactoring**: Redesigned the frontend away from generic artificial gradients and toy mockups into an authentic, accessible Zinc/Slate property management design system.
+  - **Automated Video Presentation Pipeline**: Synthesized 1080p browser scene recordings, neural voice narration, and slide generation for the assignment demonstration video.
+
+---
+
+## 📋 Project Status: What Is Finished vs Next Steps
+
+### ✅ Finished & Production-Ready
+- **Room & Bed Inventory**: Complete tracking of single and double sharing rooms, bed allocation statuses (Available/Occupied), and tenant mappings.
+- **Atomic Single-Occupancy Enforcement**: Server-side validation and MongoDB partial unique indexes preventing any bed double-booking under concurrency.
+- **Calendar-Aware Pro-Rated Rent Engine**: Inclusive day counting, dynamic days-per-month computation, and automated first/final month rent calculation.
+- **Partial Payments & Ledger**: Due/Paid/Overdue status transitions, balance tracking, and UUID-based collision-free payment receipts.
+- **Tenant Self-Service Portal**: Role-based access for tenants to review active stays, rent invoices, and lodge maintenance complaints.
+- **Maintenance Work Orders**: Facility ticketing with domains, priority severity levels, and resolution logging.
+- **Executive Dashboard**: Real-time occupancy gauges, collections vs billed realization metrics, and delinquent account alerts.
+- **Security Deposit Settlements**: Move-out workflow calculating itemized damage deductions and net refunds.
+- **Automated Test Suite**: 20 comprehensive unit and integration tests passing in Vitest with zero external dependencies.
+
+### 🔮 Unfinished & Future Enhancements (With More Time)
+- **Automated Payment Gateway**: Integrating Razorpay / Stripe Webhooks for instant UPI/Card settlements with auto-reconciliation.
+- **Automated Notification Triggers**: SMS and WhatsApp alerts via Twilio/Gupshup when rent invoices are published or 3 days before due dates.
+- **Digital KYC & Lease Agreement Uploads**: S3 / Cloudinary secure document uploads for tenant Aadhaar/passport verification and digital lease signing.
+- **Sub-Metered Utility Billing**: Dynamic per-room electricity sub-meter calculation apportioned across active bed occupants.

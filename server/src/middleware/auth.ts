@@ -1,7 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'stayhaven-production-secure-key-2026';
+export function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('FATAL: JWT_SECRET environment variable is required. Please configure JWT_SECRET in your .env file.');
+  }
+  return secret;
+}
 
 export interface AuthenticatedUser {
   id: string;
@@ -27,7 +33,7 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
 
   const token = authHeader.split(' ')[1];
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as {
+    const decoded = jwt.verify(token, getJwtSecret()) as {
       id: string;
       email: string;
       name: string;
@@ -58,7 +64,7 @@ export function signToken(user: { id: string; email: string; name: string; role:
       role: user.role,
       tenantId: user.tenantId,
     },
-    JWT_SECRET,
+    getJwtSecret(),
     { expiresIn: '7d' }
   );
 }

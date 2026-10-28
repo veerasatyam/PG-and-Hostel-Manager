@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import crypto from 'crypto';
 import { Payment } from '../models/Payment';
 import { RentRecord } from '../models/RentRecord';
 import { BedOccupancy } from '../models/BedOccupancy';
@@ -48,8 +49,8 @@ router.post('/', authenticate, requireOwner, async (req: Request, res: Response)
 
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
-    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-    const receiptNumber = `REC-${dateStr}-${randomSuffix}`;
+    const uuidSuffix = crypto.randomUUID().slice(0, 8).toUpperCase();
+    const receiptNumber = `REC-${dateStr}-${uuidSuffix}`;
 
     const newPaidAmount = rentRecord.paidAmount + amount;
     const newBalance = Math.max(0, rentRecord.amount - newPaidAmount);

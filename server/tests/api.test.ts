@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
+
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-key-32-chars-long';
+process.env.NODE_ENV = 'test';
+
 import app from '../src/index';
 import { connectDB, disconnectDB } from '../src/db';
 import { User } from '../src/models/User';
@@ -288,5 +292,153 @@ describe('StayHaven MongoDB Backend Integration Tests', () => {
       });
 
     expect(t2CheckinRes.status).toBe(201);
+  });
+
+  // TEST 7: Check-in and check-out rent record creation and lifecycle path
+  it('7. Verifies end-to-end check-in and check-out rent record creation, pro-rating, and adjustment', async () => {
+    // 1. Create a fresh tenant and bed for clean lifecycle test
+    const hashedPassword = await bcrypt.hash('secret123', 10);
+    const lifecycleUser = await User.create({
+      name: 'Sneha Rao',
+      email: 'sneha.lifecycle@stayhaven.test',
+      password: hashedPassword,
+      role: 'TENANT',
+      phone: '9988776655',
+    });
+    const lifecycleTenant = await Tenant.create({
+      userId: lifecycleUser._id,
+      emergencyContact: '9988776600',
+      idProofNumber: 'AADHAAR-3003',
+    });
+
+    const lifecycleRoom = await Room.create({
+      number: '202',
+      floor: 2,
+      type: 'SINGLE',
+      hasAc: false,
+      baseRent: 12000,
+      beds: [{ _id: new mongoose.Types.ObjectId(), name: 'Bed A', status: 'AVAILABLE' }],
+    });
+    const targetBed = lifecycleRoom.beds[0];
+
+    // 2. Check-in mid-month: November 16, 2026 (November has 30 days)
+    // Active days = 30 - 16 + 1 = 15 days
+    // Expected rent = 12000 / 30 * 15 = 6000
+    const checkinRes = await request(app)
+      .post('/api/tenants/check-in')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({
+        tenantId: lifecycleTenant._id.toString(),
+        bedId: targetBed._id.toString(),
+        checkInDate: '2026-11-16',
+        monthlyRent: 12000,
+        securityDeposit: 20000,
+      });
+
+    expect(checkinRes.status).toBe(201);
+    const checkinRent = checkinRes.body.rentRecord;
+    expect(checkinRent.isProRated).toBe(true);
+    expect(checkinRent.proRatedDays).toBe(15);
+    expect(checkinRent.totalDaysInMonth).toBe(30);
+    expect(checkinRent.amount).toBe(6000);
+    expect(checkinRent.balance).toBe(6000);
+    expect(checkinRent.status).toBe('DUE');
+
+    // Verify rent record exists in MongoDB
+    const savedCheckinRecord = await RentRecord.findById(checkinRent.id);
+    expect(savedCheckinRecord).not.toBeNull();
+    expect(savedCheckinRecord!.tenantId.toString()).toBe(lifecycleTenant._id.toString());
+    expect(savedCheckinRecord!.month).toBe(11);
+    expect(savedCheckinRecord!.year).toBe(2026);
+
+    const occupancyId = checkinRes.body.occupancy.id;
+
+    // 3. Check-out mid-month in December: December 10, 2026 (December has 31 days)
+    // Active days in checkout month = 1 to 10 = 10 days
+    // Expected checkout month rent = 12000 / 31 * 10 = 3871
+    const checkoutRes = await request(app)
+      .post('/api/tenants/check-out')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({
+        occupancyId,
+        checkOutDate: '2026-12-10',
+        depositDeductions: 1500,
+        depositDeductionNotes: 'Minor wall painting touch-up',
+      });
+
+    expect(checkoutRes.status).toBe(200);
+    expect(checkoutRes.body.proRatedRent.isProRated).toBe(true);
+    expect(checkoutRes.body.proRatedRent.proRatedDays).toBe(10);
+    expect(checkoutRes.body.proRatedRent.totalDaysInMonth).toBe(31);
+    expect(checkoutRes.body.proRatedRent.amount).toBe(3871);
+
+    // Verify December rent record was created upon check-out
+    const decRentRecord = await RentRecord.findOne({
+      tenantId: lifecycleTenant._id,
+      month: 12,
+      year: 2026,
+    });
+    expect(decRentRecord).not.toBeNull();
+    expect(decRentRecord!.amount).toBe(3871);
+    expect(decRentRecord!.balance).toBe(3871);
+    expect(decRentRecord!.isProRated).toBe(true);
+    expect(decRentRecord!.proRatedDays).toBe(10);
+    expect(decRentRecord!.proRatedCalculationNotes).toContain('Check-out');
+
+    // 4. Verify bed is released and available again
+    const updatedRoom = await Room.findById(lifecycleRoom._id);
+    const freedBed = updatedRoom?.beds.find((b: any) => b._id.toString() === targetBed._id.toString());
+    expect(freedBed?.status).toBe('AVAILABLE');
+  });
+
+  // TEST 8: Atomic single-occupancy enforcement at database index level
+  it('8. Atomic partial unique index rejects simultaneous active occupancy on the same bed', async () => {
+    const hashedPassword = await bcrypt.hash('secret123', 10);
+    const userA = await User.create({
+      name: 'Tenant Alpha',
+      email: 'alpha@stayhaven.test',
+      password: hashedPassword,
+      role: 'TENANT',
+    });
+    const tenantA = await Tenant.create({ userId: userA._id });
+
+    const userB = await User.create({
+      name: 'Tenant Beta',
+      email: 'beta@stayhaven.test',
+      password: hashedPassword,
+      role: 'TENANT',
+    });
+    const tenantB = await Tenant.create({ userId: userB._id });
+
+    // 1. Assign tenantA to testBed2
+    const occ1 = await BedOccupancy.create({
+      bedId: testBed2._id,
+      roomId: testRoom._id,
+      tenantId: tenantA._id,
+      checkInDate: new Date('2026-10-01'),
+      monthlyRent: 8000,
+      securityDeposit: 8000,
+      status: 'ACTIVE',
+    });
+    expect(occ1._id).toBeDefined();
+
+    // 2. Directly attempting to insert another ACTIVE document for the same bedId must throw Mongo error (code 11000)
+    let duplicateError: any = null;
+    try {
+      await BedOccupancy.create({
+        bedId: testBed2._id,
+        roomId: testRoom._id,
+        tenantId: tenantB._id,
+        checkInDate: new Date('2026-10-05'),
+        monthlyRent: 8000,
+        securityDeposit: 8000,
+        status: 'ACTIVE',
+      });
+    } catch (err: any) {
+      duplicateError = err;
+    }
+
+    expect(duplicateError).not.toBeNull();
+    expect(duplicateError.code).toBe(11000);
   });
 });

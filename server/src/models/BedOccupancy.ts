@@ -39,9 +39,24 @@ const BedOccupancySchema = new Schema<IBedOccupancy>(
   { timestamps: true }
 );
 
-// Indexes for fast lookup of active stays and double-booking checks
-BedOccupancySchema.index({ bedId: 1, status: 1 });
-BedOccupancySchema.index({ tenantId: 1, status: 1 });
+// Partial unique indexes to atomically prevent double-booking at the database level:
+// 1. A bed can NEVER have two active occupants simultaneously
+BedOccupancySchema.index(
+  { bedId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { status: 'ACTIVE' },
+  }
+);
+
+// 2. A tenant can NEVER have two active occupancies simultaneously
+BedOccupancySchema.index(
+  { tenantId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { status: 'ACTIVE' },
+  }
+);
 
 export const BedOccupancy =
   mongoose.models.BedOccupancy || mongoose.model<IBedOccupancy>('BedOccupancy', BedOccupancySchema);

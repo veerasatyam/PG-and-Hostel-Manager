@@ -14,6 +14,12 @@ import dashboardRouter from './routes/dashboard';
 
 dotenv.config();
 
+if (!process.env.JWT_SECRET && process.env.NODE_ENV !== 'test') {
+  console.error('FATAL CONFIGURATION ERROR: JWT_SECRET environment variable is not defined.');
+  console.error('Please configure JWT_SECRET in your server/.env file (see .env.example).');
+  process.exit(1);
+}
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 

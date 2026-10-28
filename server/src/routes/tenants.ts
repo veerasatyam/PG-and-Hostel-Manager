@@ -250,6 +250,11 @@ router.post('/check-in', authenticate, requireOwner, async (req: Request, res: R
       },
     });
   } catch (err: any) {
+    if (err?.code === 11000) {
+      return res.status(409).json({
+        error: 'Conflict: This bed is already occupied by an active resident, or the resident already has an active stay.',
+      });
+    }
     console.error('Check-in error:', err);
     return res.status(500).json({ error: 'Server error during tenant check-in' });
   }
